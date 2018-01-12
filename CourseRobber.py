@@ -1,88 +1,157 @@
 import http.cookiejar
 import urllib.request
+
+import os
 from bs4 import BeautifulSoup
+import json
+import time
 
-url = 'https://login.bit.edu.cn/cas/login'
 
-cookiejar = http.cookiejar.CookieJar()
-handler = urllib.request.HTTPCookieProcessor(cookiejar)
-opener = urllib.request.build_opener(handler)
+class CourseRobber:
 
-request = urllib.request.Request(url)
-html = opener.open(request).read().decode()
+    def __init__(self, confPath):
+        # 读取配置文件
+        self.conf = open(confPath, encoding='utf-8').read()
+        self.conf = json.loads(self.conf)
 
-soup = BeautifulSoup(html, 'lxml')
-f = soup.find('form')
-lt = f.find('input', type='hidden')['value']
-# print(lt)
-execution = f.find('input', type='hidden').next_element.next_element['value']
-# print(execution)
+        self.opener = None
+        self.curCourseId = None
+        self.curCourseName = None
+        self.curCoursePriority = None
 
-data = {
-    'username': '1120151811',
-    'password': '151886',
-    'lt': lt,
-    'execution': execution,
-    '_eventId': 'submit',
-    'rmShown': '1'
-}
-data = urllib.parse.urlencode(data).encode()
+    def login(self):
+        # 创建opener存储cookie
+        cookiejar = http.cookiejar.CookieJar()
+        handler = urllib.request.HTTPCookieProcessor(cookiejar)
+        self.opener = urllib.request.build_opener(handler)
 
-request = urllib.request.Request(url, data)
+        # 访问登陆页面获取lt和execution值
+        url = 'https://login.bit.edu.cn/cas/login'
+        request = urllib.request.Request(url)
+        html = self.opener.open(request).read().decode()
 
-a = opener.open(request)
-html = a.read().decode()
+        soup = BeautifulSoup(html, 'lxml')
+        f = soup.find('form')
+        lt = f.find('input', type='hidden')['value']
+        execution = f.find('input', type='hidden').next_element.next_element['value']
 
-url = 'http://jwms.bit.edu.cn/'
-request = urllib.request.Request(url)
-html = opener.open(request).read().decode()
+        data = {
+            'username': self.conf['username'],
+            'password': self.conf['password'],
+            'lt': lt,
+            'execution': execution,
+            '_eventId': 'submit',
+            'rmShown': '1'
+        }
+        data = urllib.parse.urlencode(data).encode()
 
-url = 'http://jwms.bit.edu.cn/jsxsd/xsxk/xsxk_index?jx0502zbid=5AD7F2B38FF94371BD3F8C5EC665C415'
-request = urllib.request.Request(url)
-html = opener.open(request).read().decode()
+        # 登陆
+        request = urllib.request.Request(url, data)
+        html = self.opener.open(request).read().decode()
+        return True
 
-url = 'http://jwms.bit.edu.cn/jsxsd/xsxkkc/comeInGgxxkxk'
-request = urllib.request.Request(url)
-html = opener.open(request).read().decode()
+    def rob(self):
+        # 访问教务管理系统主页
+        url = 'http://jwms.bit.edu.cn/'
+        request = urllib.request.Request(url)
+        self.opener.open(request).read().decode()
 
-url = 'http://jwms.bit.edu.cn/jsxsd/xsxkkc/xsxkGgxxkxk?kcxx=&skls=&skxq=&skjc=&sfym=false&sfct=false&szjylb=&kcxz=06&kcgs='
-data = {
-    'sEcho': '1',
-    'iColumns': '14',
-    'sColumns': '',
-    'iDisplayStart': '0',
-    'iDisplayLength': '15',
-    'mDataProp_0': 'kch',
-    'mDataProp_1': 'kcmc',
-    'mDataProp_2': 'bhbm',
-    'mDataProp_3': 'kcsxmc',
-    'mDataProp_4': 'kcgsmc',
-    'mDataProp_5': 'szkcflmc',
-    'mDataProp_6': 'xf',
-    'mDataProp_7': 'skls',
-    'mDataProp_8': 'sksj',
-    'mDataProp_9': 'skdd',
-    'mDataProp_10': 'xkrs',
-    'mDataProp_11': 'syrs',
-    'mDataProp_12': 'ctsm',
-    'mDataProp_13': 'czOper',
-}
-data = urllib.parse.urlencode(data).encode()
-request = urllib.request.Request(url, data)
-html = opener.open(request).read().decode()
+        # 访问选课入口页面
+        url = 'http://jwms.bit.edu.cn/jsxsd/xsxk/xsxk_index?jx0502zbid=5AD7F2B38FF94371BD3F8C5EC665C415'
+        request = urllib.request.Request(url)
+        self.opener.open(request).read().decode()
 
-url = 'http://jwms.bit.edu.cn/jsxsd/xsxkkc/ggxxkxkOper'
-data = {
-    'jx0404id': '201720182002226',
-    'xkzy': '',
-    'trjf': ''
-}
-data = urllib.parse.urlencode(data).encode()
-request = urllib.request.Request(url, data)
-html = opener.open(request).read().decode()
+        # 访问公共课选课页面
+        url = 'http://jwms.bit.edu.cn/jsxsd/xsxkkc/comeInGgxxkxk'
+        request = urllib.request.Request(url)
+        self.opener.open(request).read().decode()
 
-print(html)
-# a = open('a.html', 'w')
-# a.write(html)
+        # 获取当前课程信息
+        self.curCourseId, self.curCourseName = self.queryCurCourse()
+        self.curCoursePriority = self.conf['coursePriority'].index(self.curCourseName)
 
-print("Done!")
+        # 不断查询课程信息
+        while self.curCoursePriority != 0:
+            print("Get course list...")
+            # 拉取公共课列表
+            url = 'http://jwms.bit.edu.cn/jsxsd/xsxkkc/xsxkGgxxkxk?' \
+                  'kcxx=&skls=&skxq=&skjc=&sfym=false&sfct=false&szjylb=&kcxz=06&kcgs='
+            data = {
+                'iDisplayStart': '0',
+                'iDisplayLength': '1000',
+            }
+            data = urllib.parse.urlencode(data).encode()
+            request = urllib.request.Request(url, data)
+            courseJson = self.opener.open(request).read().decode()
+            courseList = json.loads(courseJson)['aaData']
+
+            # 检索课程列表
+            for course in courseList:
+                if course['kcgsmc'] == self.conf['courseCategory'] and int(course['syrs']) > 0:
+                    if self.curCoursePriority == -1:
+                        self.robCourse(course['jx0404id'])
+                        self.curCourseName = course['kcmc']
+                        self.curCourseId = course['jx0404id']
+                        self.curCoursePriority = self.conf['coursePriority'].index(self.curCourseName)
+                        print('Get course ' + self.curCourseName + '!')
+                    elif not course['kcmc'] in self.conf['coursePriority']:
+                        continue
+                    elif self.conf['coursePriority'].index(course['kcmc']) < self.curCoursePriority:
+                        self.dropCourse(self.curCourseId)
+                        self.robCourse(course['jx0404id'])
+                        self.curCourseName = course['kcmc']
+                        self.curCourseId = course['jx0404id']
+                        self.curCoursePriority = self.conf['coursePriority'].index(self.curCourseName)
+                        print('Replace course ' + self.curCourseName + '!')
+
+            # 等待指定时间
+            time.sleep(self.conf['refreshPeriod'])
+        return True
+
+    def queryCurCourse(self):
+        url = 'http://jwms.bit.edu.cn/jsxsd/xsxkjg/comeXkjglb'
+        request = urllib.request.Request(url)
+        html = self.opener.open(request).read().decode()
+        soup = BeautifulSoup(html, 'lxml')
+        trList = soup.table.tbody.find_all('tr')
+
+        courseName = None
+        courseId = None
+        for tr in trList:
+            if str(tr).find(self.conf['courseCategory']) > -1:
+                tdList = tr.find_all('td')
+                courseName = tdList[1].string[:-5]
+                courseId = tdList[-1].a['href'][-18:-3]
+        return courseId, courseName
+
+    def robCourse(self, courseId):
+        url = 'http://jwms.bit.edu.cn/jsxsd/xsxkkc/ggxxkxkOper'
+        data = {'jx0404id': courseId}
+        data = urllib.parse.urlencode(data).encode()
+        request = urllib.request.Request(url, data)
+        resultJson = self.opener.open(request).read().decode()
+        result = json.loads(resultJson)
+        return result['success']
+
+    def dropCourse(self, courseId):
+        url = 'http://jwms.bit.edu.cn/jsxsd/xsxkjg/xstkOper'
+        data = {'jx0404id': courseId}
+        data = urllib.parse.urlencode(data).encode()
+        request = urllib.request.Request(url, data)
+        resultJson = self.opener.open(request).read().decode()
+        result = json.loads(resultJson)
+        return result['success']
+
+
+if __name__ == '__main__':
+    courseRobber = CourseRobber('CourseRobber.json')
+    print('Read Configuration Successfully.')
+    result = courseRobber.login()
+    if result:
+        print("Login Successfully.")
+    result = courseRobber.rob()
+    if result:
+        print("Rob course Successfully!")
+
+    os.system('pause')
+

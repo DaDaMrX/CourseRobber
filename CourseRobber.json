@@ -1,0 +1,10 @@
+{
+	"username": "1120161234",
+	"password": "password",
+	"courseCategory": "实践训练通识课",
+	"coursePriority": [
+		"合唱艺术的学习与实践",
+		"交响乐艺术的学习与实践"
+	],
+	"refreshPeriod": 1
+}
