@@ -17,7 +17,9 @@ class CourseRobber:
         self.opener = None
         self.curCourseId = None
         self.curCourseName = None
-        self.curCoursePriority = None
+        self.curCoursePriority = -1
+
+        self.log = open('log.txt', 'w', encoding='utf-8')
 
     def login(self):
         # 创建opener存储cookie
@@ -48,9 +50,12 @@ class CourseRobber:
         # 登陆
         request = urllib.request.Request(url, data)
         html = self.opener.open(request).read().decode()
+
+        # print(html)
+
         return True
 
-    def rob(self):
+    def robInit(self):
         # 访问教务管理系统主页
         url = 'http://jwms.bit.edu.cn/'
         request = urllib.request.Request(url)
@@ -68,11 +73,16 @@ class CourseRobber:
 
         # 获取当前课程信息
         self.curCourseId, self.curCourseName = self.queryCurCourse()
-        self.curCoursePriority = self.conf['coursePriority'].index(self.curCourseName)
+        if self.curCourseName in self.conf['coursePriority']:
+            self.curCoursePriority = self.conf['coursePriority'].index(self.curCourseName)
+
+    def rob(self):
+        self.robInit()
 
         # 不断查询课程信息
         while self.curCoursePriority != 0:
             print("Get course list...")
+            # self.log("Get course list..." + '\n')
             # 拉取公共课列表
             url = 'http://jwms.bit.edu.cn/jsxsd/xsxkkc/xsxkGgxxkxk?' \
                   'kcxx=&skls=&skxq=&skjc=&sfym=false&sfct=false&szjylb=&kcxz=06&kcgs='
@@ -87,15 +97,19 @@ class CourseRobber:
 
             # 检索课程列表
             for course in courseList:
-                if course['kcgsmc'] == self.conf['courseCategory'] and int(course['syrs']) > 0:
+
+                print('    Deal Course: ' + course['kcmc'])
+                # self.log('    Deal Course: ' + course['kcmc'] + '\n')
+
+                if course['kcmc'] in self.conf['coursePriority'] and \
+                        course['kcgsmc'] == self.conf['courseCategory'] and int(course['syrs']) > 0:
                     if self.curCoursePriority == -1:
                         self.robCourse(course['jx0404id'])
                         self.curCourseName = course['kcmc']
                         self.curCourseId = course['jx0404id']
-                        self.curCoursePriority = self.conf['coursePriority'].index(self.curCourseName)
+                        if self.curCourseName in self.conf['coursePriority']:
+                            self.curCoursePriority = self.conf['coursePriority'].index(self.curCourseName)
                         print('Get course ' + self.curCourseName + '!')
-                    elif not course['kcmc'] in self.conf['coursePriority']:
-                        continue
                     elif self.conf['coursePriority'].index(course['kcmc']) < self.curCoursePriority:
                         self.dropCourse(self.curCourseId)
                         self.robCourse(course['jx0404id'])
@@ -113,6 +127,7 @@ class CourseRobber:
         request = urllib.request.Request(url)
         html = self.opener.open(request).read().decode()
         soup = BeautifulSoup(html, 'lxml')
+        # print(soup)
         trList = soup.table.tbody.find_all('tr')
 
         courseName = None
@@ -151,7 +166,7 @@ if __name__ == '__main__':
         print("Login Successfully.")
     result = courseRobber.rob()
     if result:
-        print("Rob course Successfully!")
+        print("Rob course Finish!")
 
     os.system('pause')
 
