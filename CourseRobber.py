@@ -11,11 +11,25 @@ class CourseRobber:
 
     def __init__(self):
 
-        self.info = {}
-        self.course = {}
+        self.info = {
+            'username': '',
+            'password': ''
+        }
+        self.course = {
+            'property': '',
+            'belong': '',
+            'category': '',
+            'teacher': '',
+            'day': '',
+            'time': ''
+        }
         self.priority = []
         self.period = 1
-        self.curCourse = {}
+        self.curCourse = {
+            'name': '',
+            'id': '',
+            'priority': -1
+        }
 
         cookiejar = http.cookiejar.CookieJar()
         handler = urllib.request.HTTPCookieProcessor(cookiejar)
@@ -25,7 +39,7 @@ class CourseRobber:
             "": "",
 
             "校公选课": "06",
-            "扩展英语": "02",
+            "拓展英语": "02",
 
             "文化素质通识课": "1",
             "实践训练通识课": "2",
@@ -175,7 +189,7 @@ class CourseRobber:
         url = url + '&szjylb=' + self.attribute_map[self.course['category']]
         url = url + '&skxq=' + self.attribute_map[self.course['day']]
         url = url + '&skjc=' + self.attribute_map[self.course['time']]
-        url = url + '&sfym=true&sfct=true'
+        url = url + '&sfym=true&sfct=false'
 
         data = {
             'iDisplayStart': '0',
@@ -187,79 +201,90 @@ class CourseRobber:
         courses = json.loads(course_json)['aaData']
         return courses
 
-    def query_curCourse(self):
+    def get_curCourse(self):
+        print('[正在获取已选课信息]')
+
         url = 'http://jwms.bit.edu.cn/jsxsd/xsxkjg/comeXkjglb'
         request = urllib.request.Request(url)
         html = self.opener.open(request).read().decode()
         soup = BeautifulSoup(html, 'lxml')
         tr_list = soup.table.tbody.find_all('tr')
 
-        courseName = None
-        courseId = None
+        if self.course['property'] == '':
+            self.course['property'] = '体育课'
+
         for tr in tr_list:
+            if str(tr).find('专业课') > -1:
+                continue
             if str(tr).find(self.course['property']) > -1 and \
                     str(tr).find(self.course['belong']) > -1:
-                tdList = tr.find_all('td')
-                courseName = tdList[1].string[:-5]
-                courseId = tdList[-1].a['href'][-18:-3]
+                td_list = tr.find_all('td')
+                self.curCourse['name'] = td_list[1].string[:-5]
+                self.curCourse['id'] = td_list[-1].a['href'][-18:-3]
                 break
 
-        return courseId, courseName
+        if self.course['property'] == '体育课':
+            self.course['property'] = ''
 
-    def rob(self):
-        self.rob_init()
-
-        print('[正在获取已选课信息]')
-
-        # self.curCourse['id'], self.curCourse['name'] = self.query_curCourse()
-        # if self.curCourse['name'] in self.priority:
-        #     self.curCourse['priority'] = self.priority.index(self.curCourse['name'])
-        # else:
-        #     self.curCourse['priority'] = -1;
-
-        self.curCourse['name'] = None
-        self.curCourse['id'] = None
-        self.curCourse['priority'] = -1
+        if self.curCourse['name'] in self.priority:
+            self.curCourse['priority'] = self.priority.index(self.curCourse['name'])
 
         print('    已选课程: ', end='')
-        if self.curCourse['name'] == None:
+        if self.curCourse['name'] == '':
             print('无')
         else:
             print(self.curCourse['name'] + ' 优先级: ' + str(self.curCourse['priority']));
 
         print('[获取已选课信息完成]\n')
 
+    def rob(self):
+        self.rob_init()
+        self.get_curCourse()
 
-        # 不断查询课程信息
         while self.curCourse['priority'] != 0:
-
             course_list = self.pull_course_list()
-            print('[获取课程列表] ' + str(len(course_list)) + '门选候')
+
+            print('[获取课程列表] ' + '选候课程: ' + str(len(course_list)))
+            print('已选课程: ', end='')
+            if self.curCourse['name'] == '':
+                print('无')
+            else:
+                print(self.curCourse['name']);
 
             for course in course_list:
-                print(course['kcmc'] + ' 剩余: ' + course['syrs'])
+                print('    ' + course['kcmc'] + ' 剩余: ' + course['syrs'])
 
                 if course['kcmc'] in self.priority:
                     if self.curCourse['priority'] == -1:
-                        self.rob_course(course['jx0404id'])
-
-                        self.curCourse['name'] = course['kcmc']
-                        self.curCourse['id'] = course['jx0404id']
-                        self.curCourse['priority'] = self.priority.index(self.curCourse['name'])
-
-                        print('>>>抢到课程 ' + self.curCourse['name'] + '!')
+                        result = self.rob_course(course['jx0404id'])
+                        if result['success']:
+                            self.curCourse['name'] = course['kcmc']
+                            self.curCourse['id'] = course['jx0404id']
+                            self.curCourse['priority'] = self.priority.index(self.curCourse['name'])
+                            print('>>>抢到课程 ' + self.curCourse['name'] + '<<<')
+                        else:
+                            print('>>>抢课失败 ' + result['message'])
 
                     elif self.priority.index(course['kcmc']) < self.curCourse['priority']:
-                        self.drop_course(self.curCourse['id'])
-                        print('>>>退掉课程 ' + self.curCourse['name'] + '!')
 
-                        self.rob_course(course['jx0404id'])
+                        result = self.drop_course(self.curCourse['id'])
+                        if result['success']:
+                            print('>>>退掉课程 ' + self.curCourse['name'] + '<<<')
+                            self.curCourse['name'] = ''
+                            self.curCourse['id'] = ''
+                            self.curCourse['priority'] = -1
+                        else:
+                            print('>>>退课失败 ' + result['message'])
 
-                        self.curCourse['name'] = course['kcmc']
-                        self.curCourse['id'] = course['jx0404id']
-                        self.curCourse['priority'] = self.priority.index(self.curCourse['name'])
+                        result = self.rob_course(course['jx0404id'])
+                        if result['success']:
+                            print('>>>抢到课程 ' + self.curCourse['name'] + '<<<')
+                            self.curCourse['name'] = course['kcmc']
+                            self.curCourse['id'] = course['jx0404id']
+                            self.curCourse['priority'] = self.priority.index(self.curCourse['name'])
+                        else:
+                            print('>>>抢课失败 ' + result['message'])
 
-                        print('>>>抢到课程 ' + self.curCourse['name'] + '!')
 
             time.sleep(self.period)
             print()
@@ -272,7 +297,7 @@ class CourseRobber:
         request = urllib.request.Request(url, data)
         result = self.opener.open(request).read().decode()
         result = json.loads(result)
-        return result['success']
+        return result
 
     def drop_course(self, course_id):
         url = 'http://jwms.bit.edu.cn/jsxsd/xsxkjg/xstkOper'
@@ -281,12 +306,16 @@ class CourseRobber:
         request = urllib.request.Request(url, data)
         result = self.opener.open(request).read().decode()
         result = json.loads(result)
-        return result['success']
+        return result
 
 
 if __name__ == '__main__':
-    courseRobber = CourseRobber()
-    courseRobber.load_conf('CourseRobber.json')
-    courseRobber.login()
-    courseRobber.rob()
+    try:
+        courseRobber = CourseRobber()
+        courseRobber.load_conf('CourseRobber.json')
+        courseRobber.login()
+        courseRobber.rob()
+    except Exception as e:
+        print(e)
     os.system('pause')
+
